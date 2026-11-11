@@ -191,7 +191,7 @@ export function startAutomaticScheduler(publishCommand) {
         const closeMinute = timeToMinutes(settings.closeTime)
         if (openMinute === null || closeMinute === null) continue
 
-        if (now.minuteOfDay === openMinute && scheduledOpenDay.get(settings.deviceId) !== now.dayKey) {
+        if (now.minuteOfDay >= openMinute && now.minuteOfDay < closeMinute && scheduledOpenDay.get(settings.deviceId) !== now.dayKey) {
           const sent = await sendAutomaticTarget({
             deviceId: settings.deviceId,
             settings,

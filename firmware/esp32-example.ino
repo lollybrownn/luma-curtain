@@ -79,13 +79,13 @@ const int ARAH_BUKA = 1;
 // 3. KONFIGURASI SENSOR LDR
 // ==========================================
 
-// true  = HIGH menunjukkan terang
-// false = LOW menunjukkan terang
+// Berdasarkan gejala pengujian saat ini:
+// LOW  = terang
+// HIGH = gelap
 //
-// Sesuaikan berdasarkan pengujian
-// output DO modul LDR.
-
-const bool NILAI_HIGH_ADALAH_TERANG = true;
+// Jika hasil Serial Monitor membuktikan modul LDR milikmu
+// memiliki polaritas sebaliknya, ubah nilai ini menjadi true.
+const bool NILAI_HIGH_ADALAH_TERANG = false;
 
 unsigned long waktuBaca = 0;
 

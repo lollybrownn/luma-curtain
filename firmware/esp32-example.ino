@@ -126,6 +126,8 @@ Posisi posisi = POSISI_TIDAK_DIKETAHUI;
 
 const unsigned long DEBOUNCE_MS = 40;
 bool keduaLimitFaultDilaporkan = false;
+bool eventLimitBukaPending = false;
+bool eventLimitTutupPending = false;
 
 struct LimitSwitch {
   int pin;
@@ -425,6 +427,7 @@ void tandaiTerbuka() {
   berhentiMotor();
 
   posisi = POSISI_BUKA;
+  eventLimitBukaPending = true;
 
   Serial.println("==============================");
   Serial.println("TIRAI TERBUKA SEPENUHNYA");
@@ -444,6 +447,7 @@ void tandaiTertutup() {
   berhentiMotor();
 
   posisi = POSISI_TUTUP;
+  eventLimitTutupPending = true;
 
   Serial.println("==============================");
   Serial.println("TIRAI TERTUTUP SEPENUHNYA");
@@ -493,7 +497,7 @@ bool prosesLimitSwitch() {
     if (gerak != BERHENTI) berhentiMotor();
 
     if (tekanBuka) {
-      posisi = POSISI_BUKA;
+      tandaiTerbuka();
       Serial.println("LIMIT BUKA terdeteksi satu kali; motor berhenti.");
     }
     return true;
@@ -510,7 +514,7 @@ bool prosesLimitSwitch() {
     if (gerak != BERHENTI) berhentiMotor();
 
     if (tekanTutup) {
-      posisi = POSISI_TUTUP;
+      tandaiTertutup();
       Serial.println("LIMIT TUTUP terdeteksi satu kali; motor berhenti.");
     }
     return true;
@@ -921,12 +925,17 @@ void kirimTelemetry() {
   doc["position"] = posisi == POSISI_BUKA ? "open" :
                     posisi == POSISI_TUTUP ? "closed" : "unknown";
   doc["moving"] = gerak != BERHENTI;
-  doc["limitOpen"] = digitalRead(LIMIT_BUKA) == LOW;
-  doc["limitClosed"] = digitalRead(LIMIT_TUTUP) == LOW;
+  // Kirim event limit hanya sekali setelah switch terkonfirmasi debounce.
+  // Flag tetap pending jika MQTT gagal mengirim, lalu dicoba pada telemetry berikutnya.
+  doc["limitOpen"] = eventLimitBukaPending;
+  doc["limitClosed"] = eventLimitTutupPending;
 
   char output[384];
   size_t written = serializeJson(doc, output, sizeof(output));
-  if (written > 0) mqtt.publish(telemetryTopic.c_str(), output, false);
+  if (written > 0 && mqtt.publish(telemetryTopic.c_str(), output, false)) {
+    eventLimitBukaPending = false;
+    eventLimitTutupPending = false;
+  }
 }
 
 void kirimHeartbeat() {

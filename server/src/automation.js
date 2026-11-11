@@ -38,7 +38,7 @@ async function recordAutomaticEvent(settings, target, message) {
   )
 }
 
-async function dispatchTarget({ deviceId, settings, target, publishCommand, message, position, moving, source }) {
+async function dispatchTarget({ deviceId, settings, target, publishCommand, message, position, moving, source, logEvent = true }) {
   const desiredPosition = target === 100 ? 'open' : 'closed'
 
   if (position === desiredPosition) {
@@ -49,7 +49,7 @@ async function dispatchTarget({ deviceId, settings, target, publishCommand, mess
 
   if (moving === true) {
     // Simpan pemicu terbaru. Target yang lebih baru menggantikan target antrean sebelumnya.
-    pendingTargets.set(deviceId, { target, message, source })
+    pendingTargets.set(deviceId, { target, message, source, logEvent })
     return false
   }
 
@@ -64,7 +64,7 @@ async function dispatchTarget({ deviceId, settings, target, publishCommand, mess
 
   lastAutoTarget.set(deviceId, target)
   pendingTargets.delete(deviceId)
-  await recordAutomaticEvent(settings, target, message)
+  if (logEvent) await recordAutomaticEvent(settings, target, message)
   return true
 }
 
@@ -197,14 +197,12 @@ export function startAutomaticScheduler(publishCommand) {
             position: current.position,
             moving: current.moving,
             source: 'schedule',
+            logEvent: false,
           })
-          // Jika target sudah tercapai atau sedang bergerak, catat event jadwal juga
-          // agar tidak dieksekusi berulang selama menit yang sama.
-          if (current.position === (schedule.target === 100 ? 'open' : 'closed')) {
-            await recordAutomaticEvent(settings, schedule.target, message)
-          } else if (current.moving) {
-            await recordAutomaticEvent(settings, schedule.target, message)
-          }
+          // Catat pemicu jadwal, bukan hanya gerakan motor. Ini menjadi penanda
+          // bahwa jadwal tersebut sudah dieksekusi hari ini, termasuk jika posisi
+          // sudah sesuai atau perintah sedang menunggu motor berhenti.
+          await recordAutomaticEvent(settings, schedule.target, message)
         }
       }
     } catch (error) {

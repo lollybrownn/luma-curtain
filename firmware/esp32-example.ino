@@ -621,11 +621,22 @@ bool prosesLimitSwitch() {
 // ==========================================
 
 bool statusCahaya = false;
+bool statusCahayaPernahDibaca = false;
 
 void updateCahaya() {
   if (millis() - waktuBaca >= INTERVAL_CAHAYA) {
     waktuBaca = millis();
-    statusCahaya = bacaCahaya();
+    bool pembacaanBaru = bacaCahaya();
+
+    if (!statusCahayaPernahDibaca || pembacaanBaru != statusCahaya) {
+      statusCahaya = pembacaanBaru;
+      statusCahayaPernahDibaca = true;
+      Serial.printf(
+        "LDR digital: %s (telemetry light=%d)\\n",
+        statusCahaya ? "TERANG" : "GELAP",
+        statusCahaya ? 1 : 0
+      );
+    }
   }
 }
 
@@ -967,7 +978,10 @@ void jagaKoneksi() {
 void kirimTelemetry() {
   if (!mqtt.connected()) return;
   JsonDocument doc;
+  // Normalisasi tetap di firmware: 0 = gelap, 1 = terang.
+  // Keputusan buka/tutup sepenuhnya dilakukan oleh backend.
   doc["light"] = statusCahaya ? 1 : 0;
+  doc["lightState"] = statusCahaya ? "bright" : "dark";
   doc["distanceCm"] = jarakValid ? jarakTerakhir : -1;
   doc["position"] = posisi == POSISI_BUKA ? "open" :
                     posisi == POSISI_TUTUP ? "closed" :
@@ -992,7 +1006,7 @@ void kirimTelemetry() {
 void kirimHeartbeat() {
   if (!mqtt.connected()) return;
   JsonDocument doc;
-  doc["firmwareVersion"] = "1.1.0";
+  doc["firmwareVersion"] = "1.2.0";
   char output[128];
   size_t written = serializeJson(doc, output, sizeof(output));
   if (written > 0) mqtt.publish(heartbeatTopic.c_str(), output, false);

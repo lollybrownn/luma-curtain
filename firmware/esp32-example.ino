@@ -274,7 +274,7 @@ void mulaiMotor(Gerak arah) {
 
   if (arah == MEMBUKA) {
 
-    stepper.setSpeed(ARAH_BUKA * KECEPATAN_HOMING);
+    stepper.setSpeed(ARAH_BUKA * KECEPATAN);
 
     Serial.println("Motor membuka tirai.");
 
@@ -282,7 +282,7 @@ void mulaiMotor(Gerak arah) {
 
   else if (arah == MENUTUP) {
 
-    stepper.setSpeed(-ARAH_BUKA * KECEPATAN_HOMING);
+    stepper.setSpeed(-ARAH_BUKA * KECEPATAN);
 
     Serial.println("Motor menutup tirai.");
 
@@ -502,7 +502,7 @@ bool prosesLimitSwitch() {
         if (tekanTutup) {
           stepper.setCurrentPosition(0);
           stepper.enableOutputs();
-          stepper.setSpeed(ARAH_BUKA * KECEPATAN);
+          stepper.setSpeed(ARAH_BUKA * KECEPATAN_HOMING);
           gerak = MEMBUKA;
           statusHoming = HOMING_CARI_BUKA;
           waktuMulaiHoming = millis();
@@ -510,7 +510,7 @@ bool prosesLimitSwitch() {
         }
       } else {
         stepper.enableOutputs();
-        stepper.setSpeed(-ARAH_BUKA * KECEPATAN);
+        stepper.setSpeed(-ARAH_BUKA * KECEPATAN_HOMING);
         gerak = MENUTUP;
         stepper.runSpeed();
       }
@@ -539,7 +539,7 @@ bool prosesLimitSwitch() {
         }
       } else {
         stepper.enableOutputs();
-        stepper.setSpeed(ARAH_BUKA * KECEPATAN);
+        stepper.setSpeed(ARAH_BUKA * KECEPATAN_HOMING);
         gerak = MEMBUKA;
         stepper.runSpeed();
       }

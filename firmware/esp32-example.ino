@@ -531,9 +531,15 @@ bool prosesLimitSwitch() {
             Serial.println("FAULT: Rentang langkah hasil kalibrasi tidak valid.");
           } else {
             totalSteps = hasilKalibrasi;
-            stepper.moveTo(0);
-            stepper.setMaxSpeed(KECEPATAN);
+
+            // Tahap homing selalu memakai runSpeed() agar konsisten.
+            // Jangan mencampur runSpeed() dengan moveTo()/run() di tengah
+            // homing karena run() bergantung pada profil akselerasi AccelStepper.
+            stepper.setMaxSpeed(MAKS_KECEPATAN);
             stepper.setAcceleration(400);
+            stepper.enableOutputs();
+            stepper.setSpeed(-ARAH_BUKA * KECEPATAN_HOMING);
+
             statusHoming = HOMING_KEMBALI_TUTUP;
             waktuMulaiHoming = millis();
             Serial.printf("Kalibrasi selesai: %ld langkah. Kembali ke 0%%...\\n", totalSteps);
@@ -550,7 +556,11 @@ bool prosesLimitSwitch() {
 
     if (statusHoming == HOMING_KEMBALI_TUTUP) {
       if (tutupAktif) {
-        stepper.moveTo(stepper.currentPosition());
+        // Begitu switch terdeteksi LOW, hentikan dulu motor.
+        // Tunggu debounce agar posisi 0% hanya ditetapkan setelah stabil.
+        stepper.setSpeed(0);
+        gerak = BERHENTI;
+
         if (tekanTutup) {
           stepper.setCurrentPosition(0);
           sudahHoming = true;
@@ -558,13 +568,19 @@ bool prosesLimitSwitch() {
           posisi = POSISI_TUTUP;
           gerak = BERHENTI;
           stepper.disableOutputs();
+
           Serial.println("Homing selesai. Posisi 0% sudah diketahui; kontrol slider aktif.");
+
+          // Jalankan target yang mungkin diterima saat proses homing.
           aturTargetPersen(targetPersen);
         }
       } else {
+        // Kembali ke limit tutup dengan metode yang sama seperti
+        // pencarian limit pada dua tahap homing sebelumnya.
         stepper.enableOutputs();
+        stepper.setSpeed(-ARAH_BUKA * KECEPATAN_HOMING);
         gerak = MENUTUP;
-        stepper.run();
+        stepper.runSpeed();
       }
       return true;
     }

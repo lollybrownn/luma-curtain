@@ -5,6 +5,7 @@ import tls from 'node:tls'
 import fs from 'node:fs'
 import { db } from './db.js'
 import { config } from './config.js'
+import { evaluateAutomaticControl } from './automation.js'
 
 export const broker=aedesFactory({id:'lumacurtain-broker'})
 const topic=(deviceId,suffix)=>`lumacurtain/${deviceId}/${suffix}`

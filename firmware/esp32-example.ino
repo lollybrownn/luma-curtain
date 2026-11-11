@@ -124,7 +124,7 @@ bool sudahHoming = false;
 long totalSteps = 0;
 int targetPersen = 0;
 unsigned long waktuMulaiHoming = 0;
-const unsigned long BATAS_WAKTU_HOMING = 60000UL;
+const unsigned long BATAS_WAKTU_HOMING = 300000UL;
 const long MIN_LANGKAH_KALIBRASI = 100;
 const long MAX_LANGKAH_KALIBRASI = 50000;
 
@@ -466,6 +466,8 @@ void tandaiTertutup() {
 // 17. MEMPROSES KEDUA LIMIT SWITCH
 // ==========================================
 
+void aturTargetPersen(int persen);
+
 bool prosesLimitSwitch() {
   bool tekanBuka = limitDitekan(limitBuka);
   bool tekanTutup = limitDitekan(limitTutup);
@@ -557,7 +559,7 @@ bool prosesLimitSwitch() {
           gerak = BERHENTI;
           stepper.disableOutputs();
           Serial.println("Homing selesai. Posisi 0% sudah diketahui; kontrol slider aktif.");
-          kendalikanMotor();
+          aturTargetPersen(targetPersen);
         }
       } else {
         stepper.enableOutputs();
@@ -774,8 +776,13 @@ void updateUltrasonik() {
 // 21. KONTROL MOTOR OTOMATIS
 // ==========================================
 
-void kendalikanMotor() {
-  if (!sudahHoming || totalSteps <= 0) return;
+// Tetapkan target hanya saat command baru diterima.
+void aturTargetPersen(int persen) {
+  targetPersen = constrain(persen, 0, 100);
+  if (!sudahHoming || totalSteps <= 0) {
+    Serial.println("Target disimpan; motor menunggu homing selesai.");
+    return;
+  }
 
   long targetLangkah = lround((double)totalSteps * targetPersen / 100.0);
   stepper.moveTo(targetLangkah);
@@ -788,12 +795,33 @@ void kendalikanMotor() {
     else posisi = POSISI_TIDAK_DIKETAHUI;
     stepper.disableOutputs();
     statusLEDKuning = false;
+    Serial.printf("Posisi sudah di target %d%%.\\n", targetPersen);
     return;
   }
 
   stepper.enableOutputs();
   gerak = sisaLangkah > 0 ? MEMBUKA : MENUTUP;
   posisi = POSISI_TIDAK_DIKETAHUI;
+  statusLEDKuning = true;
+  waktuKedip = millis();
+  Serial.printf("Motor bergerak menuju %d%% (%ld langkah).\\n", targetPersen, targetLangkah);
+}
+
+void kendalikanMotor() {
+  if (!sudahHoming || totalSteps <= 0 || gerak == BERHENTI) return;
+
+  long sisaLangkah = stepper.distanceToGo();
+  if (sisaLangkah == 0) {
+    gerak = BERHENTI;
+    if (targetPersen == 0) posisi = POSISI_TUTUP;
+    else if (targetPersen == 100) posisi = POSISI_BUKA;
+    else posisi = POSISI_TIDAK_DIKETAHUI;
+    stepper.disableOutputs();
+    statusLEDKuning = false;
+    Serial.printf("Target %d%% tercapai.\\n", targetPersen);
+    return;
+  }
+
   stepper.run();
 }
 
@@ -866,11 +894,10 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     Serial.println("MQTT: target harus 0-100, command diabaikan.");
     return;
   }
-  targetPersen = requestedTarget;
   target = requestedTarget == 100 ? TARGET_BUKA :
            requestedTarget == 0 ? TARGET_TUTUP : BELUM_ADA;
-  Serial.printf("MQTT command: target posisi %d%% diterima.\\n", targetPersen);
-  if (sudahHoming) kendalikanMotor();
+  Serial.printf("MQTT command: target posisi %d%% diterima.\\n", requestedTarget);
+  aturTargetPersen(requestedTarget);
 }
 
 void mulaiWiFiDanTopik() {
@@ -893,7 +920,9 @@ void jagaKoneksi() {
       WiFi.reconnect();
     }
     if (mqtt.connected()) mqtt.disconnect();
-    if (gerak != BERHENTI) {
+    // Homing harus tetap berjalan secara lokal walau Wi-Fi belum tersambung.
+    // Setelah homing, gerakan manual dihentikan jika koneksi jaringan putus.
+    if (sudahHoming && gerak != BERHENTI) {
       target = BELUM_ADA;
       berhentiMotor();
     }

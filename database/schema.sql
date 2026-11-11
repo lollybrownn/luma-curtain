@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS curtain_settings (
  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
  UNIQUE KEY uq_settings_owner(owner_id), KEY idx_settings_device(device_id),
  CONSTRAINT chk_settings_light CHECK(light_threshold BETWEEN 0 AND 4095), CONSTRAINT chk_settings_target CHECK(manual_target BETWEEN 0 AND 100),
- CONSTRAINT chk_open_time CHECK(open_time <= '12:00:00'), CONSTRAINT chk_close_time CHECK(close_time >= '12:00:00'),
+
  CONSTRAINT fk_settings_owner FOREIGN KEY(owner_id) REFERENCES app_users(id) ON DELETE SET NULL, CONSTRAINT fk_settings_device FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS sensor_readings (

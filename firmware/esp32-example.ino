@@ -68,6 +68,7 @@ AccelStepper stepper(
 
 const float KECEPATAN = 600;
 const float MAKS_KECEPATAN = 900;
+const float KECEPATAN_HOMING = 200;
 
 //  1 = arah buka positif
 // -1 = membalik arah motor
@@ -273,7 +274,7 @@ void mulaiMotor(Gerak arah) {
 
   if (arah == MEMBUKA) {
 
-    stepper.setSpeed(ARAH_BUKA * KECEPATAN);
+    stepper.setSpeed(ARAH_BUKA * KECEPATAN_HOMING);
 
     Serial.println("Motor membuka tirai.");
 
@@ -281,7 +282,7 @@ void mulaiMotor(Gerak arah) {
 
   else if (arah == MENUTUP) {
 
-    stepper.setSpeed(-ARAH_BUKA * KECEPATAN);
+    stepper.setSpeed(-ARAH_BUKA * KECEPATAN_HOMING);
 
     Serial.println("Motor menutup tirai.");
 
@@ -925,7 +926,7 @@ void kirimTelemetry() {
   doc["distanceCm"] = jarakValid ? jarakTerakhir : -1;
   doc["position"] = posisi == POSISI_BUKA ? "open" :
                     posisi == POSISI_TUTUP ? "closed" :
-                    sudahHoming ? "between" : "unknown";
+                    "unknown";
   doc["positionPercent"] = sudahHoming && totalSteps > 0
     ? (int)constrain(lround((double)stepper.currentPosition() * 100.0 / totalSteps), 0L, 100L)
     : -1;

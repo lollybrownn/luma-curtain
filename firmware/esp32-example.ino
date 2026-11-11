@@ -114,10 +114,18 @@ enum Posisi {
 };
 
 Target target = BELUM_ADA;
-
 Gerak gerak = BERHENTI;
-
 Posisi posisi = POSISI_TIDAK_DIKETAHUI;
+
+enum HomingState { HOMING_CARI_TUTUP, HOMING_CARI_BUKA, HOMING_KEMBALI_TUTUP, HOMING_SELESAI, HOMING_GAGAL };
+HomingState statusHoming = HOMING_CARI_TUTUP;
+bool sudahHoming = false;
+long totalSteps = 0;
+int targetPersen = 0;
+unsigned long waktuMulaiHoming = 0;
+const unsigned long BATAS_WAKTU_HOMING = 60000UL;
+const long MIN_LANGKAH_KALIBRASI = 100;
+const long MAX_LANGKAH_KALIBRASI = 50000;
 
 
 // ==========================================
@@ -241,17 +249,12 @@ bool limitDitekan(LimitSwitch &limit) {
 // ==========================================
 
 void berhentiMotor() {
-
+  stepper.moveTo(stepper.currentPosition());
   stepper.setSpeed(0);
-
   stepper.disableOutputs();
-
   gerak = BERHENTI;
-
   statusLEDKuning = false;
-
   Serial.println("Motor berhenti.");
-
 }
 
 
@@ -463,74 +466,137 @@ void tandaiTertutup() {
 // ==========================================
 
 bool prosesLimitSwitch() {
-
-  // Simpan arah sebelum pemeriksaan. Kontak limit yang sedang aktif
-  // harus langsung menghentikan motor jika motor bergerak menuju limit itu.
-  Gerak gerakSebelumnya = gerak;
-
   bool tekanBuka = limitDitekan(limitBuka);
   bool tekanTutup = limitDitekan(limitTutup);
-
-  // Baca level fisik untuk proteksi langsung, tidak menunggu debounce.
   bool bukaAktif = digitalRead(LIMIT_BUKA) == LOW;
   bool tutupAktif = digitalRead(LIMIT_TUTUP) == LOW;
 
-  // Dua limit aktif bersamaan adalah kondisi wiring/mekanisme tidak normal.
   if (bukaAktif && tutupAktif) {
-    berhentiMotor();
-    posisi = POSISI_TIDAK_DIKETAHUI;
+    stepper.moveTo(stepper.currentPosition());
+    stepper.setSpeed(0);
+    stepper.disableOutputs();
+    gerak = BERHENTI;
+    statusHoming = HOMING_GAGAL;
+    sudahHoming = false;
+    Serial.println("FAULT: Kedua limit switch aktif bersamaan. Motor dihentikan.");
+    return true;
+  }
 
-    if (!keduaLimitFaultDilaporkan) {
-      Serial.println("PERINGATAN: Kedua limit switch aktif bersamaan. Motor dihentikan.");
-      keduaLimitFaultDilaporkan = true;
+  if (!sudahHoming) {
+    if (statusHoming == HOMING_GAGAL || statusHoming == HOMING_SELESAI) return true;
+    if (millis() - waktuMulaiHoming > BATAS_WAKTU_HOMING) {
+      stepper.moveTo(stepper.currentPosition());
+      stepper.setSpeed(0);
+      stepper.disableOutputs();
+      gerak = BERHENTI;
+      statusHoming = HOMING_GAGAL;
+      Serial.println("FAULT: Homing timeout. Periksa limit switch dan mekanik tirai.");
+      return true;
+    }
+
+    if (statusHoming == HOMING_CARI_TUTUP) {
+      if (tutupAktif) {
+        stepper.setSpeed(0);
+        gerak = BERHENTI;
+        if (tekanTutup) {
+          stepper.setCurrentPosition(0);
+          stepper.enableOutputs();
+          stepper.setSpeed(ARAH_BUKA * KECEPATAN);
+          gerak = MEMBUKA;
+          statusHoming = HOMING_CARI_BUKA;
+          waktuMulaiHoming = millis();
+          Serial.println("Homing: titik 0% ditemukan. Mengukur rentang sampai limit buka...");
+        }
+      } else {
+        stepper.enableOutputs();
+        stepper.setSpeed(-ARAH_BUKA * KECEPATAN);
+        gerak = MENUTUP;
+        stepper.runSpeed();
+      }
+      return true;
+    }
+
+    if (statusHoming == HOMING_CARI_BUKA) {
+      if (bukaAktif) {
+        stepper.setSpeed(0);
+        gerak = BERHENTI;
+        if (tekanBuka) {
+          long hasilKalibrasi = stepper.currentPosition();
+          if (hasilKalibrasi < MIN_LANGKAH_KALIBRASI || hasilKalibrasi > MAX_LANGKAH_KALIBRASI) {
+            statusHoming = HOMING_GAGAL;
+            stepper.disableOutputs();
+            Serial.println("FAULT: Rentang langkah hasil kalibrasi tidak valid.");
+          } else {
+            totalSteps = hasilKalibrasi;
+            stepper.moveTo(0);
+            stepper.setMaxSpeed(KECEPATAN);
+            stepper.setAcceleration(400);
+            statusHoming = HOMING_KEMBALI_TUTUP;
+            waktuMulaiHoming = millis();
+            Serial.printf("Kalibrasi selesai: %ld langkah. Kembali ke 0%%...\\n", totalSteps);
+          }
+        }
+      } else {
+        stepper.enableOutputs();
+        stepper.setSpeed(ARAH_BUKA * KECEPATAN);
+        gerak = MEMBUKA;
+        stepper.runSpeed();
+      }
+      return true;
+    }
+
+    if (statusHoming == HOMING_KEMBALI_TUTUP) {
+      if (tutupAktif) {
+        stepper.moveTo(stepper.currentPosition());
+        if (tekanTutup) {
+          stepper.setCurrentPosition(0);
+          sudahHoming = true;
+          statusHoming = HOMING_SELESAI;
+          posisi = POSISI_TUTUP;
+          gerak = BERHENTI;
+          stepper.disableOutputs();
+          Serial.println("Homing selesai. Posisi 0% sudah diketahui; kontrol slider aktif.");
+          kendalikanMotor();
+        }
+      } else {
+        stepper.enableOutputs();
+        gerak = MENUTUP;
+        stepper.run();
+      }
+      return true;
     }
     return true;
   }
 
-  if (!bukaAktif && !tutupAktif) {
-    keduaLimitFaultDilaporkan = false;
-  }
-
-  // Limit buka: hentikan seketika jika motor sedang membuka atau
-  // target masih meminta buka. Posisi baru dikonfirmasi setelah debounce.
-  if (bukaAktif && (gerakSebelumnya == MEMBUKA || target == TARGET_BUKA)) {
-    if (gerak != BERHENTI) berhentiMotor();
-
+  // Limit switch hanya menghentikan gerak saat menuju ujung terkait.
+  if (bukaAktif && (gerak == MEMBUKA || targetPersen == 100)) {
+    stepper.moveTo(totalSteps);
+    stepper.setCurrentPosition(totalSteps);
     if (tekanBuka) {
-      tandaiTerbuka();
-      Serial.println("LIMIT BUKA terdeteksi satu kali; motor berhenti.");
+      posisi = POSISI_BUKA;
+      eventLimitBukaPending = true;
+      Serial.println("Limit buka: posisi 100% dikonfirmasi.");
     }
+    gerak = BERHENTI;
+    stepper.disableOutputs();
     return true;
   }
 
-  // Saat startup, limit yang sudah tertekan tetap dikenali setelah debounce.
-  if (tekanBuka && gerakSebelumnya == BERHENTI) {
-    tandaiTerbuka();
-    return true;
-  }
-
-  // Limit tutup: aturan yang sama untuk arah menutup.
-  if (tutupAktif && (gerakSebelumnya == MENUTUP || target == TARGET_TUTUP)) {
-    if (gerak != BERHENTI) berhentiMotor();
-
+  if (tutupAktif && (gerak == MENUTUP || targetPersen == 0)) {
+    stepper.moveTo(0);
+    stepper.setCurrentPosition(0);
     if (tekanTutup) {
-      tandaiTertutup();
-      Serial.println("LIMIT TUTUP terdeteksi satu kali; motor berhenti.");
+      posisi = POSISI_TUTUP;
+      eventLimitTutupPending = true;
+      Serial.println("Limit tutup: posisi 0% dikonfirmasi.");
     }
+    gerak = BERHENTI;
+    stepper.disableOutputs();
     return true;
   }
-
-  if (tekanTutup && gerakSebelumnya == BERHENTI) {
-    tandaiTertutup();
-    return true;
-  }
-
   return false;
-
 }
 
-
-// ==========================================
 // 18. MEMBACA LDR (TELEMETRY SAJA)
 // Keputusan buka/tutup berasal dari backend.
 // ==========================================
@@ -708,91 +774,28 @@ void updateUltrasonik() {
 // ==========================================
 
 void kendalikanMotor() {
+  if (!sudahHoming || totalSteps <= 0) return;
 
-  // ==============================
-  // TARGET MEMBUKA
-  // ==============================
+  long targetLangkah = lround((double)totalSteps * targetPersen / 100.0);
+  stepper.moveTo(targetLangkah);
+  long sisaLangkah = stepper.distanceToGo();
 
-  if (target == TARGET_BUKA) {
-
-    // Sudah mencapai posisi terbuka
-
-    if (posisi == POSISI_BUKA) {
-
-      if (gerak != BERHENTI) {
-
-        berhentiMotor();
-
-      }
-
-      return;
-
-    }
-
-    // Mulai membuka jika belum bergerak
-
-    if (gerak != MEMBUKA) {
-
-      mulaiMotor(MEMBUKA);
-
-    }
-
-    stepper.runSpeed();
-
+  if (sisaLangkah == 0) {
+    gerak = BERHENTI;
+    if (targetPersen == 0) posisi = POSISI_TUTUP;
+    else if (targetPersen == 100) posisi = POSISI_BUKA;
+    else posisi = POSISI_TIDAK_DIKETAHUI;
+    stepper.disableOutputs();
+    statusLEDKuning = false;
+    return;
   }
 
-
-  // ==============================
-  // TARGET MENUTUP
-  // ==============================
-
-  else if (target == TARGET_TUTUP) {
-
-    // Sudah mencapai posisi tertutup
-
-    if (posisi == POSISI_TUTUP) {
-
-      if (gerak != BERHENTI) {
-
-        berhentiMotor();
-
-      }
-
-      return;
-
-    }
-
-    // Mulai menutup jika belum bergerak
-
-    if (gerak != MENUTUP) {
-
-      mulaiMotor(MENUTUP);
-
-    }
-
-    stepper.runSpeed();
-
-  }
-
-
-  // ==============================
-  // BELUM ADA TARGET
-  // ==============================
-
-  else {
-
-    if (gerak != BERHENTI) {
-
-      berhentiMotor();
-
-    }
-
-  }
-
+  stepper.enableOutputs();
+  gerak = sisaLangkah > 0 ? MEMBUKA : MENUTUP;
+  posisi = POSISI_TIDAK_DIKETAHUI;
+  stepper.run();
 }
 
-
-// ==========================================
 // 22. KONTROL LED INDIKATOR
 // ==========================================
 
@@ -862,13 +865,11 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     Serial.println("MQTT: target harus 0-100, command diabaikan.");
     return;
   }
-
-  // Versi ini hanya memiliki limit switch endpoint, belum ada
-  // kendali posisi antara: 0-49 = tutup, 50-100 = buka.
-  target = (requestedTarget >= 50) ? TARGET_BUKA : TARGET_TUTUP;
-  Serial.printf("MQTT command: target %d%% -> %s\\n",
-                requestedTarget,
-                target == TARGET_BUKA ? "BUKA" : "TUTUP");
+  targetPersen = requestedTarget;
+  target = requestedTarget == 100 ? TARGET_BUKA :
+           requestedTarget == 0 ? TARGET_TUTUP : BELUM_ADA;
+  Serial.printf("MQTT command: target posisi %d%% diterima.\\n", targetPersen);
+  if (sudahHoming) kendalikanMotor();
 }
 
 void mulaiWiFiDanTopik() {
@@ -923,7 +924,11 @@ void kirimTelemetry() {
   doc["light"] = statusCahaya ? 1 : 0;
   doc["distanceCm"] = jarakValid ? jarakTerakhir : -1;
   doc["position"] = posisi == POSISI_BUKA ? "open" :
-                    posisi == POSISI_TUTUP ? "closed" : "unknown";
+                    posisi == POSISI_TUTUP ? "closed" :
+                    sudahHoming ? "between" : "unknown";
+  doc["positionPercent"] = sudahHoming && totalSteps > 0
+    ? (int)constrain(lround((double)stepper.currentPosition() * 100.0 / totalSteps), 0L, 100L)
+    : -1;
   doc["moving"] = gerak != BERHENTI;
   // Kirim event limit hanya sekali setelah switch terkonfirmasi debounce.
   // Flag tetap pending jika MQTT gagal mengirim, lalu dicoba pada telemetry berikutnya.
@@ -978,7 +983,10 @@ void setup() {
   digitalWrite(LED_HIJAU, LOW);
 
   stepper.setMaxSpeed(MAKS_KECEPATAN);
+  stepper.setAcceleration(400);
   stepper.disableOutputs();
+  waktuMulaiHoming = millis();
+  Serial.println("Homing awal: mencari limit switch tutup untuk menetapkan 0%...");
 
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(onMqttMessage);

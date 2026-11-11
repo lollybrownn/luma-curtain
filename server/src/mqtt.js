@@ -43,10 +43,11 @@ broker.on('publish',async(packet,client)=>{
     if(packet.topic===topic(client.deviceId,'telemetry')){
       // Firmware sudah menormalisasi pembacaan LDR:
       // 1 = terang, 0 = gelap. Backend meneruskan nilai tersebut tanpa dibalik lagi.
+      // LDR digital: 0 = gelap, 1 = terang. Nilai lain ditolak.
       const light=body.light==null?null:Number(body.light)
       const distance=body.distanceCm==null?null:Number(body.distanceCm)
       const position=['open','closed','between','unknown'].includes(body.position)?body.position:'unknown'
-      if((light!==null&&(!Number.isFinite(light)||light<0||light>4095))||(distance!==null&&(!Number.isFinite(distance)||distance<0||distance>1000)))return
+      if((light!==null&&light!==0&&light!==1)||(distance!==null&&(!Number.isFinite(distance)||distance<0||distance>1000)))return
       const [devices]=await db.execute('SELECT id,owner_id FROM devices WHERE device_id=? LIMIT 1',[client.deviceId]); const device=devices[0]
       await db.execute('UPDATE devices SET last_seen_at=? WHERE id=?',[now,device.id])
       if(device.owner_id){

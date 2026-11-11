@@ -41,7 +41,13 @@ broker.on('publish',async(packet,client)=>{
       await db.execute('UPDATE devices SET last_seen_at=?,firmware_version=LEFT(?,40) WHERE device_id=?',[now,String(body.firmwareVersion||''),client.deviceId]);return
     }
     if(packet.topic===topic(client.deviceId,'telemetry')){
-      const light=body.light==null?null:Number(body.light); const distance=body.distanceCm==null?null:Number(body.distanceCm)
+      // Normalisasi polaritas LDR di backend.
+      // Pada modul yang dipakai saat ini, nilai digital yang diterima terbalik:
+      // 0 terbaca sebagai terang dan 1 terbaca sebagai gelap.
+      // Ubah hanya nilai digital 0/1; nilai analog (jika ada) dibiarkan apa adanya.
+      const rawLight=body.light==null?null:Number(body.light)
+      const light=rawLight===0?1:rawLight===1?0:rawLight
+      const distance=body.distanceCm==null?null:Number(body.distanceCm)
       const position=['open','closed','between','unknown'].includes(body.position)?body.position:'unknown'
       if((light!==null&&(!Number.isFinite(light)||light<0||light>4095))||(distance!==null&&(!Number.isFinite(distance)||distance<0||distance>1000)))return
       const [devices]=await db.execute('SELECT id,owner_id FROM devices WHERE device_id=? LIMIT 1',[client.deviceId]); const device=devices[0]

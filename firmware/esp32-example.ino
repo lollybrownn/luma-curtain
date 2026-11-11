@@ -125,6 +125,7 @@ Posisi posisi = POSISI_TIDAK_DIKETAHUI;
 // ==========================================
 
 const unsigned long DEBOUNCE_MS = 40;
+bool keduaLimitFaultDilaporkan = false;
 
 struct LimitSwitch {
   int pin;
@@ -459,36 +460,65 @@ void tandaiTertutup() {
 
 bool prosesLimitSwitch() {
 
-  bool tekanBuka = limitDitekan(limitBuka);
+  // Simpan arah sebelum pemeriksaan. Kontak limit yang sedang aktif
+  // harus langsung menghentikan motor jika motor bergerak menuju limit itu.
+  Gerak gerakSebelumnya = gerak;
 
+  bool tekanBuka = limitDitekan(limitBuka);
   bool tekanTutup = limitDitekan(limitTutup);
 
-  if (tekanBuka && tekanTutup) {
+  // Baca level fisik untuk proteksi langsung, tidak menunggu debounce.
+  bool bukaAktif = digitalRead(LIMIT_BUKA) == LOW;
+  bool tutupAktif = digitalRead(LIMIT_TUTUP) == LOW;
 
+  // Dua limit aktif bersamaan adalah kondisi wiring/mekanisme tidak normal.
+  if (bukaAktif && tutupAktif) {
     berhentiMotor();
-
     posisi = POSISI_TIDAK_DIKETAHUI;
 
-    Serial.println("PERINGATAN: Kedua limit switch aktif.");
-
+    if (!keduaLimitFaultDilaporkan) {
+      Serial.println("PERINGATAN: Kedua limit switch aktif bersamaan. Motor dihentikan.");
+      keduaLimitFaultDilaporkan = true;
+    }
     return true;
-
   }
 
-  if (tekanBuka) {
+  if (!bukaAktif && !tutupAktif) {
+    keduaLimitFaultDilaporkan = false;
+  }
 
+  // Limit buka: hentikan seketika jika motor sedang membuka atau
+  // target masih meminta buka. Posisi baru dikonfirmasi setelah debounce.
+  if (bukaAktif && (gerakSebelumnya == MEMBUKA || target == TARGET_BUKA)) {
+    if (gerak != BERHENTI) berhentiMotor();
+
+    if (tekanBuka) {
+      posisi = POSISI_BUKA;
+      Serial.println("LIMIT BUKA terdeteksi satu kali; motor berhenti.");
+    }
+    return true;
+  }
+
+  // Saat startup, limit yang sudah tertekan tetap dikenali setelah debounce.
+  if (tekanBuka && gerakSebelumnya == BERHENTI) {
     tandaiTerbuka();
-
     return true;
-
   }
 
-  if (tekanTutup) {
+  // Limit tutup: aturan yang sama untuk arah menutup.
+  if (tutupAktif && (gerakSebelumnya == MENUTUP || target == TARGET_TUTUP)) {
+    if (gerak != BERHENTI) berhentiMotor();
 
-    tandaiTertutup();
-
+    if (tekanTutup) {
+      posisi = POSISI_TUTUP;
+      Serial.println("LIMIT TUTUP terdeteksi satu kali; motor berhenti.");
+    }
     return true;
+  }
 
+  if (tekanTutup && gerakSebelumnya == BERHENTI) {
+    tandaiTertutup();
+    return true;
   }
 
   return false;

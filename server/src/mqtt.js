@@ -46,7 +46,10 @@ broker.on('publish',async(packet,client)=>{
       if((light!==null&&(!Number.isFinite(light)||light<0||light>4095))||(distance!==null&&(!Number.isFinite(distance)||distance<0||distance>1000)))return
       const [devices]=await db.execute('SELECT id,owner_id FROM devices WHERE device_id=? LIMIT 1',[client.deviceId]); const device=devices[0]
       await db.execute('UPDATE devices SET last_seen_at=? WHERE id=?',[now,device.id])
-      if(device.owner_id)await db.execute('INSERT INTO sensor_readings(id,owner_id,device_id,reading_at,light,distance_cm,position,moving,limit_open,limit_closed,source) VALUES(UUID(),?,?,?,?,?,?,?,?,?,\'esp32\')',[device.owner_id,device.id,now,light,distance,position,body.moving===true,body.limitOpen===true,body.limitClosed===true])
+      if(device.owner_id){
+        await db.execute('INSERT INTO sensor_readings(id,owner_id,device_id,reading_at,light,distance_cm,position,moving,limit_open,limit_closed,source) VALUES(UUID(),?,?,?,?,?,?,?,?,?,\\'esp32\\')',[device.owner_id,device.id,now,light,distance,position,body.moving===true,body.limitOpen===true,body.limitClosed===true])
+        await evaluateAutomaticControl({deviceId:client.deviceId,light,position,moving:body.moving===true,publishCommand})
+      }
     }
   }catch(error){console.error('Payload MQTT diabaikan:',error.message)}
 })

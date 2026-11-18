@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import { db } from './db.js'
 import { config } from './config.js'
 import { evaluateAutomaticControl } from './automation.js'
+import { notifyTelegram, notifyTelegramCompletion } from './telegram.js'
 
 export const broker=aedesFactory({id:'lumacurtain-broker'})
 const topic=(deviceId,suffix)=>`lumacurtain/${deviceId}/${suffix}`
@@ -38,7 +39,12 @@ broker.on('publish',async(packet,client)=>{
   try{
     const body=JSON.parse(packet.payload.toString()); const now=new Date()
     if(packet.topic===topic(client.deviceId,'heartbeat')){
-      await db.execute('UPDATE devices SET last_seen_at=?,firmware_version=LEFT(?,40) WHERE device_id=?',[now,String(body.firmwareVersion||''),client.deviceId]);return
+      const [previousRows]=await db.execute('SELECT last_seen_at,owner_id FROM devices WHERE device_id=? LIMIT 1',[client.deviceId])
+      const previous=previousRows[0]
+      const wasOffline=!previous?.last_seen_at || now.getTime()-new Date(previous.last_seen_at).getTime()>45000
+      await db.execute('UPDATE devices SET last_seen_at=?,firmware_version=LEFT(?,40) WHERE device_id=?',[now,String(body.firmwareVersion||''),client.deviceId])
+      if(wasOffline && previous?.owner_id) await notifyTelegram(`🟢 ESP32 LumaCurtain kembali online.\\nPerangkat: ${client.deviceId}`)
+      return
     }
     if(packet.topic===topic(client.deviceId,'telemetry')){
       // Firmware sudah menormalisasi pembacaan LDR:
@@ -58,6 +64,7 @@ broker.on('publish',async(packet,client)=>{
           [device.owner_id, device.id, now, light, distance, position, body.moving===true, body.limitOpen===true, body.limitClosed===true],
         )
         await evaluateAutomaticControl({deviceId:client.deviceId,light,position,moving:body.moving===true,publishCommand})
+        await notifyTelegramCompletion({deviceId:client.deviceId,position,moving:body.moving===true})
       }
     }
   }catch(error){console.error('Payload MQTT diabaikan:',error.message)}

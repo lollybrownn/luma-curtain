@@ -10,7 +10,7 @@
     "create:admin": "node scripts/create-admin.js"
   },
   "dependencies": {
-    "aedes": "^0.51.3",
+    "mqtt": "^5.14.1",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

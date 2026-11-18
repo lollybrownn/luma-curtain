@@ -3,6 +3,7 @@
 #include <AccelStepper.h>
 #include <math.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -12,12 +13,19 @@
 // Isi dari hasil provisioning backend. Jangan commit kredensial asli.
 const char* WIFI_SSID = "GANTI_WIFI";
 const char* WIFI_PASSWORD = "GANTI_PASSWORD_WIFI";
-const char* MQTT_HOST = "192.168.1.10"; // IP komputer/server backend
-const uint16_t MQTT_PORT = 1883;
+const char* MQTT_HOST = "GANTI_DENGAN_HOST_EMQX_CLOUD";
+const uint16_t MQTT_PORT = 8883;
+// Tempel CA certificate resmi dari dokumentasi/provider EMQX Cloud.
+// Jangan gunakan setInsecure() untuk produksi.
+static const char MQTT_CA_CERT[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+TEMPEL_CA_CERTIFICATE_RESMI_DI_SINI
+-----END CERTIFICATE-----
+)EOF";
 const char* DEVICE_ID = "LUMA-GANTI";
 const char* MQTT_PASSWORD = "GANTI_PASSWORD_MQTT";
 
-WiFiClient network;
+WiFiClientSecure network;
 PubSubClient mqtt(network);
 String commandTopic;
 String telemetryTopic;
@@ -1048,6 +1056,7 @@ void setup() {
   waktuMulaiHoming = millis();
   Serial.println("Homing awal: mencari limit switch tutup untuk menetapkan 0%...");
 
+  network.setCACert(MQTT_CA_CERT);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(onMqttMessage);
   mqtt.setBufferSize(512);

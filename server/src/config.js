@@ -14,6 +14,8 @@ const schema = z.object({
   MQTT_PORT: z.coerce.number().int().min(1).max(65535).default(1883),
   MQTT_TLS_CERT_PATH: z.string().optional(),
   MQTT_TLS_KEY_PATH: z.string().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
 })
 const parsed = schema.safeParse(process.env)
 if (!parsed.success) {

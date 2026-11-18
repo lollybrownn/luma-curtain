@@ -36,7 +36,7 @@ async function cloudRequest(path, { method = 'GET', body } = {}) {
 function deviceRules(deviceId) {
   const prefix = `lumacurtain/${deviceId}`
   return [
-    { action: 'publish', permission: 'allow', topic: `${prefix}/telemetry`, qos: ['0', '1'], retain: 'false' },
+    { action: 'publish', permission: 'allow', topic: `${prefix}/telemetry`, qos: [0, 1], retain: 'false' },
     { action: 'publish', permission: 'allow', topic: `${prefix}/heartbeat`, qos: ['0', '1'], retain: 'false' },
     { action: 'publish', permission: 'allow', topic: `${prefix}/status`, qos: ['0', '1'], retain: 'false' },
     { action: 'subscribe', permission: 'allow', topic: `${prefix}/command`, qos: ['0', '1'] },

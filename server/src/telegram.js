@@ -37,7 +37,7 @@ export async function notifyTelegramCompletion({ deviceId, position, moving }) {
   if (!pending) return
   if (Date.now() - pending.requestedAt > 120_000) {
     pendingCompletions.delete(deviceId)
-    await notifyTelegram(`⚠️ Belum ada konfirmasi posisi setelah 2 menit. Periksa ESP32 dan mekanisme tirai.\\nPerangkat: ${deviceId}`)
+    await notifyTelegram(`⚠️ Belum ada konfirmasi posisi setelah 2 menit. Periksa ESP32 dan mekanisme tirai.\nPerangkat: ${deviceId}`)
     return
   }
   const expectedPosition = pending.target === 100 ? 'open' : 'closed'

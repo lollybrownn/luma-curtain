@@ -220,3 +220,30 @@ Admin console menyediakan:
 - audit log tindakan admin.
 
 Password akun, pairing code, dan password MQTT tidak pernah dapat dibaca kembali dari MySQL. Password MQTT baru hanya tampil sekali ketika dirotasi.
+
+## Telegram Bot
+
+Telegram dapat mengendalikan tirai dan menerima notifikasi. Fitur ini opsional dan berjalan dari backend yang sama.
+
+1. Buat bot melalui [@BotFather](https://t.me/BotFather), lalu salin token bot.
+2. Dapatkan Chat ID akun Telegram yang diizinkan.
+3. Isi konfigurasi berikut di `server/.env` (jangan commit file ini):
+
+```env
+TELEGRAM_BOT_TOKEN=token_dari_botfather
+TELEGRAM_CHAT_ID=chat_id_akun_telegram
+```
+
+4. Jalankan ulang backend dengan `npm run dev`.
+5. Buka bot Telegram dan kirim `/start`.
+
+Perintah yang tersedia:
+
+- `/open` - membuka tirai ke 100%.
+- `/close` - menutup tirai ke 0%.
+- `/status` - melihat mode, posisi, dan status koneksi ESP32.
+- `/help` - melihat bantuan.
+
+**Keamanan dan batasan:** hanya Chat ID yang cocok dengan `TELEGRAM_CHAT_ID` yang dapat memakai bot. Perintah `/open` dan `/close` hanya diterima ketika mode Manual aktif dan ESP32 terdeteksi online. Backend mengirim konfirmasi awal, lalu notifikasi keberhasilan setelah telemetry ESP32 mengonfirmasi posisi akhir. Bot juga mengirim notifikasi saat mode dashboard berubah dan saat koneksi ESP32 terputus atau tersambung kembali.
+
+Bot memakai long polling Telegram dari proses backend; jangan aktifkan webhook untuk bot yang sama secara bersamaan. Jika token pernah dibagikan, buat token baru melalui BotFather.

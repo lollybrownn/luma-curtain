@@ -1,222 +1,125 @@
-# LumaCurtain Standalone
-
-Versi lokal tanpa Figma/Payload:
+# LumaCurtain
 
 - **Frontend:** Vite + React + React Router
-- **Backend:** Express
+- **Backend:** Express (Node.js)
 - **Database:** MySQL 8
-- **MQTT broker:** Aedes (open-source, berjalan di proses backend)
-- **ESP32:** contoh PubSubClient + ArduinoJson tersedia di `firmware/`
+- **MQTT broker:** managed EMQX Cloud (Dedicated Flex direkomendasikan untuk kontrol dan provisioning ACL per perangkat)
+- **ESP32:** PubSubClient + ArduinoJson, koneksi MQTT over TLS
+
+Broker tidak lagi dijalankan di proses backend. Backend dan ESP32 sama-sama menjadi MQTT client yang terhubung ke deployment EMQX Cloud. Hosting Express dan MySQL tetap diperlukan secara terpisah.
 
 ## Keamanan MQTT
 
-MQTT Client ID **bukan secret** dan dapat terlihat di jaringan. Aplikasi tidak mengandalkan Client ID untuk keamanan.
+- Setiap ESP32 memakai username berupa Device ID dan password acak 192-bit.
+- Password disimpan sebagai bcrypt hash di MySQL; plaintext hanya ditampilkan ketika provisioning atau rotasi.
+- User MQTT perangkat dibuat di EMQX Cloud melalui Deployment API.
+- ACL per username hanya mengizinkan publish telemetry/heartbeat/status milik perangkat dan subscribe command miliknya.
+- Backend memakai kredensial terpisah. Jangan gunakan akun backend sebagai kredensial ESP32.
+- Koneksi MQTT menggunakan TLS port 8883 dan verifikasi CA certificate. Jangan memakai `setInsecure()`.
+- Jangan gunakan broker publik untuk kontrol tirai atau data perangkat.
 
-Setiap perangkat mendapat:
+## 1. Persiapan layanan EMQX Cloud
 
-- Device ID acak sebagai MQTT username
-- password MQTT acak 192-bit, hanya dicetak sekali
-- kode pairing terpisah
-- hash bcrypt untuk password MQTT dan kode pairing di MySQL
-- ACL programatik: perangkat hanya boleh publish ke topic miliknya dan subscribe ke command miliknya
-- koneksi anonim ditolak
+Buat deployment EMQX Cloud **Dedicated Flex** dan aktifkan password-based authentication dengan built-in database serta built-in database authorization. Buat kredensial backend khusus, misalnya `lumacurtain-backend`.
 
-Jangan masukkan kredensial hasil provisioning ke Git. Untuk internet/produksi, aktifkan TLS melalui `MQTT_TLS_CERT_PATH` dan `MQTT_TLS_KEY_PATH`, firewall port MQTT, serta gunakan VPN bila memungkinkan.
+Backend memerlukan izin MQTT:
+- Subscribe: `lumacurtain/+/telemetry`, `lumacurtain/+/heartbeat`, `lumacurtain/+/status`
+- Publish: `lumacurtain/+/command`
 
-## 1. Persyaratan
+Atur ACL backend pada Dashboard EMQX Cloud (username atau client ID) atau melalui Deployment API. Jangan jadikan backend superuser jika ACL terpisah dapat digunakan.
 
-- Node.js 20 atau lebih baru
-- MySQL 8
-- npm (sudah ikut ketika memasang Node.js)
+Di EMQX Cloud, buat Deployment API Key dengan izin minimum untuk mengelola built-in database authentication users dan authorization rules. Ambil **API endpoint dari detail deployment** (bukan Platform API endpoint), lalu isi App ID dan App Secret. Endpoint API berbeda dari hostname MQTT.
 
-Periksa:
+## 2. Database dan environment backend
 
-```powershell
-node -v
-npm -v
-mysql --version
-```
-
-Proyek ini tidak membutuhkan `mise`, `corepack`, atau `pnpm`.
-
-## 2. Buat database
-
-Buka Command Prompt di folder proyek:
-
-```cmd
-mysql -u root -p < database\schema.sql
-```
-
-Jika memakai PowerShell:
-
-```powershell
-cmd /c "mysql -u root -p < database\schema.sql"
-```
-
-Buat user MySQL khusus melalui MySQL Console. Ganti password dengan nilai kuat milik Anda:
-
-```sql
-CREATE USER 'lumacurtain_user'@'localhost' IDENTIFIED BY 'PASSWORD_KUAT_ANDA';
-GRANT SELECT, INSERT, UPDATE, DELETE ON lumacurtain.* TO 'lumacurtain_user'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-## 3. Buat konfigurasi server
-
-Di PowerShell:
+Buat database menggunakan `database/schema.sql`, lalu salin konfigurasi:
 
 ```powershell
 Copy-Item server\.env.example server\.env
 ```
 
-Buat JWT secret acak:
+Isi nilai MySQL, JWT, dan variabel berikut di `server/.env`:
 
-```powershell
-node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-```
+- `MQTT_HOST`: hostname MQTT dari detail deployment EMQX Cloud (tanpa `mqtts://`)
+- `MQTT_PORT=8883`
+- `MQTT_BACKEND_USERNAME` dan `MQTT_BACKEND_PASSWORD`: akun backend yang dibuat di EMQX
+- `MQTT_BACKEND_CLIENT_ID=lumacurtain-backend`
+- `MQTT_CLOUD_API_URL`: Deployment API endpoint dari detail deployment
+- `MQTT_CLOUD_APP_ID` dan `MQTT_CLOUD_APP_SECRET`: kredensial Deployment API
+- `MQTT_CA_CERT_PATH`: opsional, path CA bundle jika Node.js tidak memakai trust store standar
 
-Buka `server/.env`, lalu isi:
+Jangan commit `server/.env`.
 
-- `MYSQL_USER=lumacurtain_user`
-- `MYSQL_PASSWORD` dengan password MySQL Anda
-- `JWT_SECRET` dengan hasil perintah Node di atas
-- `CLIENT_ORIGIN=http://localhost:5173`
-
-Jangan commit atau membagikan `server/.env`.
-
-## 4. Instal dan jalankan
-
-Dari folder utama proyek:
+## 3. Instal dan jalankan backend/frontend
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Buka `http://localhost:5173`.
+Jalankan dari root proyek. Backend Express menggunakan port 3001; frontend Vite menggunakan port 5173. Backend otomatis menghubungkan diri ke EMQX Cloud dan melakukan reconnect bila koneksi terputus.
 
-Port lokal:
+## 4. Provisioning perangkat ESP32
 
-- Web: `5173`
-- Express API: `3001`
-- MQTT: `1883`
-
-Izinkan port 1883 di Windows Firewall hanya untuk jaringan privat/LAN yang diperlukan. Jangan membuka port 1883 langsung ke internet.
-
-## 5. Provisioning perangkat
-
-Pastikan MySQL sudah berjalan dan `server/.env` sudah benar:
+Setelah API, authenticator, dan authorization source EMQX siap:
 
 ```powershell
 npm run provision:device -- "Tirai Kamar Utama"
 ```
 
-Perintah mencetak satu kali:
+Script akan:
+1. membuat user MQTT di EMQX Cloud;
+2. memasang ACL khusus device;
+3. menyimpan pairing code dan hash password ke MySQL;
+4. mencetak kredensial sekali saja.
 
-- `DEVICE_ID`
-- `PAIRING_CODE`
-- `MQTT_USERNAME`
-- `MQTT_PASSWORD`
-- topic perangkat
+Simpan output provisioning dengan aman. Jika provisioning gagal setelah user cloud dibuat, script mencoba membersihkan user sementara di EMQX.
 
-Simpan output di password manager. Gunakan Device ID dan pairing code pada halaman pairing. Salin MQTT username/password ke firmware ESP32 secara lokal dan jangan commit firmware yang sudah berisi secret.
+## 5. Konfigurasi firmware
 
-## 6. Upload firmware ESP32
+Buka `firmware/esp32-example.ino` dan isi:
+- Wi-Fi SSID/password;
+- hostname EMQX Cloud;
+- Device ID dan MQTT password dari provisioning;
+- CA certificate resmi untuk hostname deployment EMQX Cloud.
 
-1. Buka `firmware/esp32-example.ino` di Arduino IDE.
-2. Instal library `PubSubClient` dan `ArduinoJson`.
-3. Isi Wi-Fi, IP komputer server, Device ID, dan MQTT password.
-4. Pastikan ESP32 dan komputer ada di jaringan yang sama.
-5. Upload firmware.
+Firmware memakai `WiFiClientSecure` dan PubSubClient pada port 8883. Tempel CA certificate yang benar; placeholder di file bukan sertifikat valid. Verifikasi TLS tidak boleh dinonaktifkan. Install library Arduino `PubSubClient` dan `ArduinoJson` serta library bawaan ESP32.
 
-## 7. Build produksi
+Setelah upload, pastikan Serial Monitor menunjukkan Wi-Fi tersambung dan MQTT connected.
 
-```powershell
-npm run build
-$env:NODE_ENV="production"
-npm run start
-```
+## 6. Rotasi password perangkat
 
-Pada produksi, letakkan Express di belakang reverse proxy HTTPS. MQTT sebaiknya memakai sertifikat TLS dan port 8883, bukan TCP polos 1883.
+Admin console menyediakan rotasi kredensial MQTT. Endpoint memperbarui password di EMQX Cloud terlebih dahulu, lalu menyimpan bcrypt hash baru di MySQL dan menampilkan password baru satu kali. Setelah rotasi, update `MQTT_PASSWORD` di firmware dan upload ulang ESP32. Perangkat dengan password lama akan gagal reconnect.
 
-## Topic MQTT
-
-Untuk Device ID `LUMA-ABC123`:
+## Arsitektur
 
 ```text
-Publish:   lumacurtain/LUMA-ABC123/telemetry
-Publish:   lumacurtain/LUMA-ABC123/heartbeat
-Publish:   lumacurtain/LUMA-ABC123/status
-Subscribe: lumacurtain/LUMA-ABC123/command
+React/Vite
+    |
+    v
+Express API + MySQL 8
+    |  MQTT client (TLS 8883)
+    v
+EMQX Cloud managed broker
+    ^
+    |  MQTT client (TLS 8883)
+  ESP32
 ```
 
-Broker memverifikasi username/password dan menolak topic milik perangkat lain.
+EMQX Cloud mengelola broker; pengguna tidak perlu menjalankan atau meng-host broker sendiri. Express API dan MySQL tetap perlu di-host atau dijalankan di lingkungan server yang tersedia.
 
 ## Troubleshooting
 
-### `mysql` tidak dikenali
+- **Connection refused / timeout:** cek hostname, port 8883, egress firewall, dan status deployment.
+- **Not authorized:** pastikan authenticator password-based aktif, username/password benar, serta ACL username dan backend sudah sesuai.
+- **TLS certificate verify failed:** pastikan CA certificate resmi cocok dengan sertifikat hostname deployment; jangan mematikan verifikasi TLS.
+- **API 401/403:** pastikan memakai Deployment API endpoint dan App ID/App Secret dari deployment, serta API key memiliki whitelist izin endpoint yang diperlukan.
+- **Provisioning API 404:** pastikan deployment mendukung API v5 built-in database authenticator/authorization dan sumber built-in database sudah diaktifkan.
+- **Rotasi password:** setelah admin menghasilkan password baru, firmware harus diperbarui dengan password tersebut.
 
-Tambahkan folder `bin` MySQL ke PATH Windows atau jalankan menggunakan path lengkap, misalnya:
+## Referensi resmi
 
-```powershell
-& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p
-```
-
-### ESP32 tidak terhubung
-
-- Gunakan IP LAN komputer, bukan `localhost`.
-- Pastikan `MQTT_USERNAME` sama dengan Device ID.
-- Periksa Windows Firewall untuk jaringan privat.
-- Jalankan provisioning hanya sekali per perangkat.
-- Jangan memakai Device ID milik perangkat lain.
-
-## Admin console
-
-Versi ini memiliki admin console di:
-
-```text
-http://localhost:5173/admin
-```
-
-Untuk database baru, `database/schema.sql` sudah mencakup role admin dan audit log.
-
-Jika database dibuat menggunakan ZIP versi sebelumnya, jalankan migrasi ini satu kali:
-
-```powershell
-cmd /c "mysql -u root -p < database\migrate-admin.sql"
-```
-
-Saat `npm run dev` dijalankan pertama kali, server otomatis membuat akun admin jika belum ada. Email dan password acak akan dicetak satu kali di terminal. Simpan password tersebut.
-
-Jika output hilang atau Anda ingin mereset password admin:
-
-```powershell
-npm run create:admin
-```
-
-Email default admin:
-
-```text
-admin@lumacurtain.local
-```
-
-Script mencetak password acak satu kali di terminal. Simpan password tersebut di password manager. Menjalankan perintah lagi akan menghasilkan password baru dan mereset akun admin yang sama.
-
-Untuk email admin lain:
-
-```powershell
-npm run create:admin -- "admin@example.com" "Nama Administrator"
-```
-
-Pendaftaran dari halaman publik selalu membuat role `member`; pengguna tidak dapat menjadikan dirinya admin.
-
-Admin console menyediakan:
-
-- overview pengguna, perangkat, status online, sensor, dan aktivitas;
-- daftar pengguna dan aktivasi/nonaktivasi akun;
-- daftar perangkat, unpair, dan rotasi password MQTT;
-- pembacaan sensor terbaru;
-- riwayat aktivitas tirai; dan
-- audit log tindakan admin.
-
-Password akun, pairing code, dan password MQTT tidak pernah dapat dibaca kembali dari MySQL. Password MQTT baru hanya tampil sekali ketika dirotasi.
+- [EMQX Cloud Dedicated API](https://docs.emqx.com/en/cloud/latest/api/dedicated.html)
+- [EMQX Cloud Deployment Management API](https://docs.emqx.com/en/cloud/latest/api/deployment_manage.html)
+- [EMQX Cloud authorization](https://docs.emqx.com/en/cloud/latest/deployments/authz_overview.html)
+- [EMQX Cloud authentication](https://docs.emqx.com/en/cloud/latest/deployments/auth_overview.html)

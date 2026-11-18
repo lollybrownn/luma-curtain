@@ -35,6 +35,11 @@ export async function notifyTelegramCompletion({ deviceId, position, moving }) {
   if (!enabled || moving === true) return
   const pending = pendingCompletions.get(deviceId)
   if (!pending) return
+  if (Date.now() - pending.requestedAt > 120_000) {
+    pendingCompletions.delete(deviceId)
+    await notifyTelegram(`⚠️ Belum ada konfirmasi posisi setelah 2 menit. Periksa ESP32 dan mekanisme tirai.\\nPerangkat: ${deviceId}`)
+    return
+  }
   const expectedPosition = pending.target === 100 ? 'open' : 'closed'
   if (position !== expectedPosition) return
 
@@ -155,6 +160,15 @@ async function handleCommand(message) {
 }
 
 async function pollUpdates() {
+  // Abaikan update lama yang tertinggal saat backend mati agar command lama
+  // tidak dieksekusi tiba-tiba ketika server dinyalakan kembali.
+  try {
+    const backlog = await telegramApi('getUpdates', { offset: -1, timeout: 0, allowed_updates: ['message'] })
+    if (backlog.length) updateOffset = backlog[backlog.length - 1].update_id + 1
+  } catch (error) {
+    console.error('Gagal menyelaraskan antrean Telegram:', error.message)
+  }
+
   while (polling) {
     try {
       const updates = await telegramApi('getUpdates', { offset: updateOffset, timeout: 25, allowed_updates: ['message'] })

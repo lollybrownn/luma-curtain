@@ -20,7 +20,7 @@ Broker tidak lagi dijalankan di proses backend. Backend dan ESP32 sama-sama menj
 
 ## 1. Persiapan layanan EMQX Cloud
 
-Buat deployment EMQX Cloud **Dedicated Flex** dan aktifkan password-based authentication dengan built-in database serta built-in database authorization. Buat kredensial backend khusus, misalnya `lumacurtain-backend`.
+Buat deployment EMQX Cloud **Dedicated Flex** dan aktifkan password-based authentication dengan built-in database serta built-in database authorization. Pada authenticator, pilih **UserID Type = username**. Buat kredensial backend khusus, misalnya `lumacurtain-backend`.
 
 Backend memerlukan izin MQTT:
 - Subscribe: `lumacurtain/+/telemetry`, `lumacurtain/+/heartbeat`, `lumacurtain/+/status`
@@ -64,10 +64,11 @@ Jangan commit `server/.env`.
 
 ```powershell
 npm install
+# npm install memperbarui package-lock.json di root sesuai dependency MQTT.js yang baru
 npm run dev
 ```
 
-Jalankan dari root proyek. Backend Express menggunakan port 3001; frontend Vite menggunakan port 5173. Backend otomatis menghubungkan diri ke EMQX Cloud dan melakukan reconnect bila koneksi terputus.
+Jalankan dari root proyek. Pastikan perubahan `package-lock.json` hasil `npm install` ikut di-commit sebelum memakai `npm ci` pada CI/deployment. Backend Express menggunakan port 3001; frontend Vite menggunakan port 5173. Backend otomatis menghubungkan diri ke EMQX Cloud dan melakukan reconnect bila koneksi terputus.
 
 ## 4. Provisioning perangkat ESP32
 

@@ -40,7 +40,7 @@ broker.on('clientDisconnect', async client => {
     const [rows] = await db.execute('SELECT owner_id,last_seen_at FROM devices WHERE device_id=? LIMIT 1',[client.deviceId])
     const device = rows[0]
     if (device?.owner_id && device.last_seen_at && Date.now()-new Date(device.last_seen_at).getTime()<45000) {
-      await notifyTelegram(`🔴 ESP32 LumaCurtain terputus dari MQTT.\\nPerangkat: ${client.deviceId}`)
+      await notifyTelegram(`🔴 ESP32 LumaCurtain terputus dari MQTT.\nPerangkat: ${client.deviceId}`)
     }
   } catch (error) {
     console.error('Notifikasi ESP32 offline gagal:',error.message)
@@ -55,7 +55,7 @@ broker.on('publish',async(packet,client)=>{
       const previous=previousRows[0]
       const wasOffline=!previous?.last_seen_at || now.getTime()-new Date(previous.last_seen_at).getTime()>45000
       await db.execute('UPDATE devices SET last_seen_at=?,firmware_version=LEFT(?,40) WHERE device_id=?',[now,String(body.firmwareVersion||''),client.deviceId])
-      if(wasOffline && previous?.owner_id) await notifyTelegram(`🟢 ESP32 LumaCurtain kembali online.\\nPerangkat: ${client.deviceId}`)
+      if(wasOffline && previous?.owner_id) await notifyTelegram(`🟢 ESP32 LumaCurtain kembali online.\nPerangkat: ${client.deviceId}`)
       return
     }
     if(packet.topic===topic(client.deviceId,'telemetry')){

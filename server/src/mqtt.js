@@ -34,6 +34,18 @@ broker.authorizeSubscribe=(client,subscription,done)=>{
   if(client?.deviceId&&subscription.topic===topic(client.deviceId,'command'))return done(null,subscription)
   done(new Error('Topic subscribe tidak diizinkan.'))
 }
+broker.on('clientDisconnect', async client => {
+  if (!client?.deviceId) return
+  try {
+    const [rows] = await db.execute('SELECT owner_id,last_seen_at FROM devices WHERE device_id=? LIMIT 1',[client.deviceId])
+    const device = rows[0]
+    if (device?.owner_id && device.last_seen_at && Date.now()-new Date(device.last_seen_at).getTime()<45000) {
+      await notifyTelegram(`🔴 ESP32 LumaCurtain terputus dari MQTT.\\nPerangkat: ${client.deviceId}`)
+    }
+  } catch (error) {
+    console.error('Notifikasi ESP32 offline gagal:',error.message)
+  }
+})
 broker.on('publish',async(packet,client)=>{
   if(!client?.deviceId)return
   try{

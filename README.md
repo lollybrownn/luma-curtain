@@ -26,9 +26,19 @@ Backend memerlukan izin MQTT:
 - Subscribe: `lumacurtain/+/telemetry`, `lumacurtain/+/heartbeat`, `lumacurtain/+/status`
 - Publish: `lumacurtain/+/command`
 
-Atur ACL backend pada Dashboard EMQX Cloud (username atau client ID) atau melalui Deployment API. Jangan jadikan backend superuser jika ACL terpisah dapat digunakan.
+Atur ACL backend pada Dashboard EMQX Cloud untuk username backend:
+- Allow subscribe ke `lumacurtain/+/telemetry`, `lumacurtain/+/heartbeat`, dan `lumacurtain/+/status`
+- Allow publish ke `lumacurtain/+/command`
 
-Di EMQX Cloud, buat Deployment API Key dengan izin minimum untuk mengelola built-in database authentication users dan authorization rules. Ambil **API endpoint dari detail deployment** (bukan Platform API endpoint), lalu isi App ID dan App Secret. Endpoint API berbeda dari hostname MQTT.
+Jangan jadikan backend superuser jika ACL terpisah dapat digunakan.
+
+Di EMQX Cloud, buat Deployment API Key dengan izin minimum untuk mengelola built-in database authentication users dan authorization rules. Whitelist endpoint API yang dibutuhkan:
+- `GET, POST, PUT, DELETE /api/v5/authentication/password_based:built_in_database/users`
+- `GET, PUT, DELETE /api/v5/authentication/password_based:built_in_database/users/*`
+- `POST /api/v5/authorization/sources/built_in_database/rules/users`
+- `PUT, DELETE /api/v5/authorization/sources/built_in_database/rules/users/*`
+
+Ambil **API endpoint dari detail deployment** (bukan Platform API endpoint), lalu isi App ID dan App Secret. Endpoint API berbeda dari hostname MQTT. Pastikan built-in database authentication dan authorization sudah dibuat/aktif pada deployment sebelum provisioning.
 
 ## 2. Database dan environment backend
 

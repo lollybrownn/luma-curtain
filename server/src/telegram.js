@@ -37,16 +37,20 @@ export async function notifyTelegramCompletion({ deviceId, position, moving }) {
   if (!pending) return
   if (Date.now() - pending.requestedAt > 120_000) {
     pendingCompletions.delete(deviceId)
-    await notifyTelegram(`⚠️ Belum ada konfirmasi posisi setelah 2 menit. Periksa ESP32 dan mekanisme tirai.\nPerangkat: ${deviceId}`)
+    await telegramApi('sendMessage', {
+      chat_id: pending.chatId,
+      text: `⚠️ Belum ada konfirmasi posisi setelah 2 menit. Periksa ESP32 dan mekanisme tirai.\nPerangkat: ${deviceId}`,
+    })
     return
   }
   const expectedPosition = pending.target === 100 ? 'open' : 'closed'
   if (position !== expectedPosition) return
 
   pendingCompletions.delete(deviceId)
-  await notifyTelegram(
-    `✅ Tirai berhasil ${pending.target === 100 ? 'dibuka' : 'ditutup'}.\nPosisi target: ${pending.target}%\nPerangkat: ${deviceId}`,
-  )
+  await telegramApi('sendMessage', {
+    chat_id: pending.chatId,
+    text: `✅ Tirai berhasil ${pending.target === 100 ? 'dibuka' : 'ditutup'}.\nPosisi target: ${pending.target}%\nPerangkat: ${deviceId}`,
+  })
 }
 
 async function getDeviceStatus() {
@@ -152,7 +156,7 @@ async function handleCommand(message) {
      SELECT UUID(),owner_id,id,?, 'manual', ?, ? FROM devices WHERE device_id=? AND owner_id IS NOT NULL`,
     [target === 100 ? 'open_command' : 'close_command', target, `Perintah Telegram: target ${target}%`, device.deviceId],
   )
-  pendingCompletions.set(device.deviceId, { target, requestedAt: Date.now() })
+  pendingCompletions.set(device.deviceId, { target, chatId, requestedAt: Date.now() })
   await telegramApi('sendMessage', {
     chat_id: chatId,
     text: `📨 Perintah diterima. Tirai sedang ${target === 100 ? 'dibuka' : 'ditutup'}.\nTarget: ${target}%\nAku akan memberi tahu ketika ESP32 mengonfirmasi posisi sudah tercapai.`,

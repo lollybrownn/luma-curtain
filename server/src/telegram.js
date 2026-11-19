@@ -6,8 +6,8 @@ let updateOffset = 0
 let publishCommandRef
 const pendingCompletions = new Map()
 
-const enabled = Boolean(config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID)
-const authorizedChatId = String(config.TELEGRAM_CHAT_ID || '')
+const enabled = Boolean(config.TELEGRAM_BOT_TOKEN)
+const notificationChatId = String(config.TELEGRAM_CHAT_ID || '')
 
 async function telegramApi(method, body = {}) {
   if (!enabled) throw new Error('Telegram belum dikonfigurasi.')
@@ -23,9 +23,9 @@ async function telegramApi(method, body = {}) {
 }
 
 export async function notifyTelegram(message) {
-  if (!enabled) return
+  if (!enabled || !notificationChatId) return
   try {
-    await telegramApi('sendMessage', { chat_id: authorizedChatId, text: message })
+    await telegramApi('sendMessage', { chat_id: notificationChatId, text: message })
   } catch (error) {
     console.error('Notifikasi Telegram gagal:', error.message)
   }
@@ -88,7 +88,7 @@ async function replyHelp(chatId) {
 
 async function handleCommand(message) {
   const chatId = String(message.chat?.id || '')
-  if (chatId !== authorizedChatId || !message.text) return
+  if (!chatId || !message.text) return
 
   const command = message.text.trim().split(/\s+/, 1)[0].split('@')[0].toLowerCase()
   if (command === '/start' || command === '/help') {
@@ -178,8 +178,12 @@ async function pollUpdates() {
           if (update.message) await handleCommand(update.message)
         } catch (error) {
           console.error('Perintah Telegram gagal diproses:', error.message)
-          if (String(update.message?.chat?.id || '') === authorizedChatId) {
-            await notifyTelegram('❌ Perintah gagal diproses. Periksa koneksi backend dan MQTT.')
+          const chatId = String(update.message?.chat?.id || '')
+          if (chatId) {
+            await telegramApi('sendMessage', {
+              chat_id: chatId,
+              text: '❌ Perintah gagal diproses. Periksa koneksi backend dan MQTT.',
+            })
           }
         }
       }
@@ -192,13 +196,13 @@ async function pollUpdates() {
 
 export function startTelegram(publishCommand) {
   if (!enabled) {
-    console.log('Telegram nonaktif. Isi TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID di server/.env untuk mengaktifkan.')
+    console.log('Telegram nonaktif. Isi TELEGRAM_BOT_TOKEN di server/.env untuk mengaktifkan.')
     return
   }
   if (polling) return
   publishCommandRef = publishCommand
   polling = true
   void publishCommandRef
-  console.log('Telegram bot aktif (akses dibatasi ke TELEGRAM_CHAT_ID).')
+  console.log('Telegram bot aktif (perintah dapat digunakan oleh semua akun).')
   void pollUpdates()
 }

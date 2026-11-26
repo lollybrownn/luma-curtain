@@ -5,7 +5,7 @@ export function Toast({ toast, onClose }) {
     if (!toast) return
     const timer = setTimeout(onClose, 3600)
     return () => clearTimeout(timer)
-  }, [toast, onClose])
+  }, [toast])
 
   if (!toast) return null
 
